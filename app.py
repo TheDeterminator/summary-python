@@ -142,6 +142,6 @@ def get_video_title(video_id):
 
 
 if __name__ == "__main__":
-    with app.app_context():
+    # with app.app_context():
         # import_data_from_json()
     app.run(debug=True)
