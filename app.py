@@ -5,11 +5,16 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import json
 import requests
 from bs4 import BeautifulSoup
+import os
+
+
+
 
 app = Flask(__name__)
 
 # Configure the database
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///video_data_cache.db'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///video_data_cache.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -28,22 +33,26 @@ class VideoData(db.Model):
 
 
 def import_data_from_json():
-    try:
-        with open('video_data_cache.json', 'r') as file:
-            video_data_cache = json.load(file)
-    except FileNotFoundError:
-        video_data_cache = {}
+    # Check if there are any records in the VideoData table
+    if VideoData.query.first() is None:
+        try:
+            with open('video_data_cache.json', 'r') as file:
+                video_data_cache = json.load(file)
+        except FileNotFoundError:
+            video_data_cache = {}
 
-    for video_id, video_data in video_data_cache.items():
-        video = VideoData.query.get(video_id)
-        if not video:
-            new_video = VideoData(
-                id=video_id, title=video_data['title'], transcript=video_data['transcript']
-            )
-            db.session.add(new_video)
-            db.session.commit()
-    
-    print('Imported data from video_data_cache.json')
+        for video_id, video_data in video_data_cache.items():
+            video = VideoData.query.get(video_id)
+            if not video:
+                new_video = VideoData(
+                    video_id=video_id, title=video_data['title'], transcript=video_data['transcript']
+                )
+                db.session.add(new_video)
+                db.session.commit()
+
+        print('Imported data from video_data_cache.json')
+    else:
+        print('Data already exists in the database, skipping import.')
 
 
 # Add these lines to read the transcript cache from a file
@@ -131,7 +140,7 @@ def get_video_title(video_id):
         return jsonify({'error': error})
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    with app.app_context():
+        import_data_from_json()
     app.run(debug=True)
-    # import_data_from_json()
-
