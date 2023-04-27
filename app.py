@@ -6,14 +6,13 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import os
+from dotenv import load_dotenv
 
-
+load_dotenv()
 
 
 app = Flask(__name__)
 
-# Configure the database
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///video_data_cache.db'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -23,7 +22,7 @@ migrate = Migrate(app, db)
 # Create a VideoData model
 class VideoData(db.Model):
     video_id = db.Column(db.String, primary_key=True)
-    title = db.Column(db.String)
+    title = db.Column(db.JSON)
     transcript = db.Column(db.Text)
 
     def __init__(self, video_id, title, transcript):
@@ -32,42 +31,44 @@ class VideoData(db.Model):
         self.transcript = transcript
 
 
-def import_data_from_json():
-    # Check if there are any records in the VideoData table
-    if VideoData.query.first() is None:
-        try:
-            with open('video_data_cache.json', 'r') as file:
-                video_data_cache = json.load(file)
-        except FileNotFoundError:
-            video_data_cache = {}
+# def import_data_from_json():
+#     # Check if there are any records in the VideoData table
+#     if VideoData.query.first() is None:
+#         try:
+#             with open('video_data_cache.json', 'r') as file:
+#                 video_data_cache = json.load(file)
+#         except FileNotFoundError:
+#             video_data_cache = {}
 
-        for video_id, video_data in video_data_cache.items():
-            video = VideoData.query.get(video_id)
-            if not video:
-                new_video = VideoData(
-                    video_id=video_id, title=video_data['title'], transcript=video_data['transcript']
-                )
-                db.session.add(new_video)
-                db.session.commit()
+#         for video_id, video_data in video_data_cache.items():
+#             video = VideoData.query.get(video_id)
+#             if not video:
+#                 new_video = VideoData(
+#                     video_id=video_id,
+#                     title=video_data['title'],
+#                     transcript=json.dumps(video_data['transcript'])  # Change this line
+#                 )
+#                 db.session.add(new_video)
+#                 db.session.commit()
 
-        print('Imported data from video_data_cache.json')
-    else:
-        print('Data already exists in the database, skipping import.')
+#         print('Imported data from video_data_cache.json')
+#     else:
+#         print('Data already exists in the database, skipping import.')
 
 
 # Add these lines to read the transcript cache from a file
-try:
-    with open('video_data_cache.json', 'r') as file:
-        video_data_cache = json.load(file)
-except FileNotFoundError:
-    video_data_cache = {}
+# try:
+#     with open('video_data_cache.json', 'r') as file:
+#         video_data_cache = json.load(file)
+# except FileNotFoundError:
+#     video_data_cache = {}
 
 
 def get_video_data(video_id):
     try:
         video_data = VideoData.query.get(video_id)
         if video_data:
-            return {'title': video_data.title, 'transcript': video_data.transcript}
+            return {'title': video_data.title, 'transcript': json.loads(video_data.transcript)}
         else:
             # Build the YouTube video URL
             video_url = f'https://www.youtube.com/watch?v={video_id}'
@@ -142,5 +143,5 @@ def get_video_title(video_id):
 
 if __name__ == "__main__":
     with app.app_context():
-        import_data_from_json()
+        # import_data_from_json()
     app.run(debug=True)
