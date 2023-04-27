@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Transcript</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <style>
+        #transcript {
+            max-height: 400px;
+            overflow-y: scroll;
+            padding: 1rem;
+            border: 1px solid #ccc;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>YouTube Transcript</h1>
+        <form id="transcript-form">
+            <div class="form-group">
+                <label for="youtube-url">YouTube URL:</label>
+                <input type="text" class="form-control" id="youtube-url" name="youtube-url" required>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                Get Transcript
+            </button>
+            <button type="button" class="btn btn-secondary" id="copy-transcript">Copy Transcript</button>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="pagination-toggle" value="pagination">
+                <label class="form-check-label" for="pagination-toggle">Enable Pagination</label>
+            </div>
+            <select class="custom-select" id="pagination-splits">
+                <option value="2" selected>Halves</option>
+                <option value="4">Quarters</option>
+                <option value="8">Eighths</option>
+            </select>
+            <div id="pagination-controls" class="hidden">
+                <button type="button" class="btn btn-primary" id="prev-page">&lt; Previous</button>
+                <button type="button" class="btn btn-primary" id="next-page">Next &gt;</button>
+            </div>
+
+        </form>
+        <div id="transcript-container" class="hidden">
+            <h2 id="video-title"></h2>
+            <div id="transcript"></div>
+        </div>
+    </div>
+    <script>
+        let transcript;
+
+        document.getElementById('transcript-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const spinner = form.querySelector('.spinner-border');
+            spinner.classList.remove('d-none'); // Show the spinner
+            const response = await fetch('/get_transcript', { method: 'POST', body: formData });
+            spinner.classList.add('d-none'); // Hide the spinner
+            const data = await response.json();
+            const transcriptElement = document.getElementById('transcript');
+            const videoTitleElement = document.getElementById('video-title');
+            const transcriptContainer = document.getElementById('transcript-container');
+            transcriptElement.innerHTML = '';
+            videoTitleElement.innerText = data.title ? `Transcript for ${data.title}` : '';
+            if (data.transcript.length) {
+                transcriptContainer.classList.remove('hidden');
+                const p = document.createElement('p')
+                transcript = data.transcript
+                p.innerText = transcript
+                transcriptElement.appendChild(p)
+
+                if (paginationToggle.checked) {
+                    const numSplits = parseInt(paginationSplits.value);
+                    transcriptSections = splitTranscript(transcript, numSplits);
+                    updateTranscriptDisplay(transcriptSections, currentPage);
+                    paginationControls.classList.remove('hidden');
+                } else {
+                    updateTranscriptDisplay([transcriptElement.textContent], currentPage);
+                    paginationControls.classList.add('hidden');
+                }
+            } else {
+                transcriptContainer.classList.add('hidden');
+            }
+        });
+
+        document.getElementById('copy-transcript').addEventListener('click', () => {
+            const transcriptElement = document.getElementById('transcript');
+            const range = document.createRange();
+            range.selectNode(transcriptElement);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+        });
+
+        function updateTranscriptDisplay(transcriptSections, currentPage) {
+            const transcriptElement = document.getElementById('transcript');
+            transcriptElement.innerHTML = transcriptSections[currentPage];
+        }
+
+        function splitTranscript(text, numSplits) {
+            const words = text.split(' ');
+            const wordsPerSplit = Math.ceil(words.length / numSplits);
+            const transcriptSections = [];
+
+            for (let i = 0; i < words.length; i += wordsPerSplit) {
+                transcriptSections.push(words.slice(i, i + wordsPerSplit).join(' '));
+            }
+
+            return transcriptSections;
+        }
+
+        const paginationToggle = document.getElementById('pagination-toggle');
+        const paginationSplits = document.getElementById('pagination-splits');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const paginationControls = document.getElementById('pagination-controls');
+        const transcriptElement = document.getElementById('transcript');
+        let transcriptSections = [];
+        let currentPage = 0;
+
+        paginationToggle.addEventListener('change', () => {
+            if (paginationToggle.checked) {
+                const numSplits = parseInt(paginationSplits.value);
+                transcriptSections = splitTranscript(transcript, numSplits);
+                updateTranscriptDisplay(transcriptSections, currentPage);
+                paginationControls.classList.remove('hidden');
+            } else {
+                currentPage = 0
+                updateTranscriptDisplay([transcript], currentPage);
+                paginationControls.classList.add('hidden');
+            }
+        });
+
+        paginationSplits.addEventListener('change', () => {
+            if (paginationToggle.checked) {
+                const numSplits = parseInt(paginationSplits.value);
+                transcriptSections = splitTranscript(transcript, numSplits);
+                updateTranscriptDisplay(transcriptSections, currentPage);
+            }
+        });
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 0) {
+                currentPage--;
+                updateTranscriptDisplay(transcriptSections, currentPage);
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (currentPage < transcriptSections.length - 1) {
+                currentPage++;
+                updateTranscriptDisplay(transcriptSections, currentPage);
+            }
+        });
+
+    </script>
+</body>
+
+</html>
