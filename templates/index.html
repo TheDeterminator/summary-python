@@ -29,7 +29,8 @@
         <form id="transcript-form">
             <div class="form-group">
                 <label for="youtube-url">YouTube URL:</label>
-                <input type="text" class="form-control" id="youtube-url" name="youtube-url" placeholder="Enter a URL" required>
+                <input type="text" class="form-control" id="youtube-url" name="youtube-url" placeholder="Enter a URL"
+                    required>
             </div>
             <button type="submit" class="btn btn-primary">
                 <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
@@ -37,6 +38,8 @@
             </button>
             <button type="button" class="btn btn-secondary" id="copy-transcript">Copy Transcript</button>
             <button type="button" class="btn btn-secondary" id="copy-title">Copy Title</button>
+            <div id="copy-status-message" class="hidden"></div>
+
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="pagination-toggle" value="pagination">
                 <label class="form-check-label" for="pagination-toggle">Enable Pagination</label>
@@ -61,14 +64,15 @@
         let transcript;
         let videoTitle;
 
-        function copyToClipboard(value) {
+        function copyToClipboard(value, postCopyMessage) {
             // Check for Clipboard API support
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(value)
                     .then(() => {
-                        console.log("Value copied to clipboard!");
+                        showMessage(postCopyMessage);
                     })
                     .catch((err) => {
+                        showMessage("Copy to clipboard failed!");
                         console.error("Failed to copy value to clipboard: ", err);
                     });
             } else {
@@ -79,9 +83,19 @@
                 textarea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
-                console.log("Value copied to clipboard!");
+                showMessage("Copied to clipboard!");
             }
         }
+
+        function showMessage(text) {
+            const message = document.getElementById('copy-status-message');
+            message.innerText = text;
+            message.classList.remove('hidden');
+            setTimeout(() => {
+                message.classList.add('hidden');
+            }, 3000); // Hide the message after 3 seconds
+        }
+
 
         document.getElementById('transcript-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -102,6 +116,7 @@
                 transcriptContainer.classList.remove('hidden');
                 const p = document.createElement('p')
                 transcript = data.transcript
+                transcriptSections = [transcript]
                 p.innerText = transcript
                 transcriptElement.appendChild(p)
 
@@ -121,16 +136,20 @@
 
         // TODO: Update this to use copyToClipboard function you created above
         document.getElementById('copy-transcript').addEventListener('click', () => {
-            const transcriptElement = document.getElementById('transcript');
-            const range = document.createRange();
-            range.selectNode(transcriptElement);
-            window.getSelection().removeAllRanges();
-            window.getSelection().addRange(range);
-            document.execCommand('copy');
-            window.getSelection().removeAllRanges();
+            // const transcriptElement = document.getElementById('transcript');
+            // const range = document.createRange();
+            // range.selectNode(transcriptElement);
+            // window.getSelection().removeAllRanges();
+            // window.getSelection().addRange(range);
+            // document.execCommand('copy');
+            // window.getSelection().removeAllRanges();
+            // showMessage("Copied to clipboard!");
+            copyToClipboard(transcriptSections[currentPage], "Copied to clipboard!")
+
         });
         document.getElementById('copy-title').addEventListener('click', () => {
-            copyToClipboard(videoTitle)
+            copyToClipboard(videoTitle, "Title Copied!")
+
         })
 
         function updateTranscriptDisplay(transcriptSections, currentPage) {
