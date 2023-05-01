@@ -1,29 +1,31 @@
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, VideoUnavailable, NoTranscriptFound
 import json
 import requests
+# from requests import RequestException
+from requests.exceptions import RequestException, Timeout, TooManyRedirects
 from bs4 import BeautifulSoup
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, LONGTEXT
 
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+# app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://thedeterminator:testpassword@thedeterminator.mysql.pythonanywhere-services.com/thedeterminator$summarydb'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # Create a VideoData model
+
+
 class VideoData(db.Model):
-    video_id = db.Column(db.String, primary_key=True)
+    video_id = db.Column(db.String(255), primary_key=True)
     title = db.Column(db.JSON)
-    transcript = db.Column(db.Text)
+    transcript = db.Column(MEDIUMTEXT)
 
     def __init__(self, video_id, title, transcript):
         self.video_id = video_id
@@ -31,65 +33,56 @@ class VideoData(db.Model):
         self.transcript = transcript
 
 
-# def import_data_from_json():
-#     # Check if there are any records in the VideoData table
-#     if VideoData.query.first() is None:
-#         try:
-#             with open('video_data_cache.json', 'r') as file:
-#                 video_data_cache = json.load(file)
-#         except FileNotFoundError:
-#             video_data_cache = {}
-
-#         for video_id, video_data in video_data_cache.items():
-#             video = VideoData.query.get(video_id)
-#             if not video:
-#                 new_video = VideoData(
-#                     video_id=video_id,
-#                     title=video_data['title'],
-#                     transcript=json.dumps(video_data['transcript'])  # Change this line
-#                 )
-#                 db.session.add(new_video)
-#                 db.session.commit()
-
-#         print('Imported data from video_data_cache.json')
-#     else:
-#         print('Data already exists in the database, skipping import.')
-
-
-# Add these lines to read the transcript cache from a file
-# try:
-#     with open('video_data_cache.json', 'r') as file:
-#         video_data_cache = json.load(file)
-# except FileNotFoundError:
-#     video_data_cache = {}
-
-
 def get_video_data(video_id):
     try:
         video_data = VideoData.query.get(video_id)
+
         if video_data:
             return {'title': video_data.title, 'transcript': json.loads(video_data.transcript)}
         else:
             # Build the YouTube video URL
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
-            # Use requests and BeautifulSoup to extract the video title
-            response = requests.get(video_url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            video_title = soup.find('title').text.strip().split(' - YouTube')[0]
+            try:
+                # Use requests and BeautifulSoup to extract the video title
+                response = requests.get(video_url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                video_title_element = soup.find('title')
+                if video_title_element:
+                    video_title = video_title_element.text.strip().split(
+                        ' - YouTube')[0]
+                else:
+                    return {'error': 'Error: Could not find the video title.'}
+            except RequestException as e:
+                return {'error': f'Error: Failed to fetch the video URL. {str(e)}'}
+            except Timeout:
+                return {'error': 'Error: The request timed out.'}
+            except TooManyRedirects:
+                return {'error': 'Error: Too many redirects.'}
+            except Exception as e:
+                return {'error': f'Error: An unexpected error occurred 1. {str(e)}'}
 
-            # Use the YouTubeTranscriptApi to get the transcript
-            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            try:
+                # Use the YouTubeTranscriptApi to get the transcript
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            except (TranscriptsDisabled, NoTranscriptFound):
+                return {'error': 'Error: No captions available for this video.'}
+            except VideoUnavailable:
+                return {'error': 'Error: The video is unavailable.'}
 
             # Cache the video data in the database
-            video_data = VideoData(id=video_id, title=video_title, transcript=transcript)
+            video_data = VideoData(
+                video_id=video_id, title=video_title, transcript=json.dumps(transcript))
             db.session.add(video_data)
             db.session.commit()
 
-            return {'title': video_data.title, 'transcript': video_data.transcript}
-    except:
-        error = 'Error: Invalid URL or no captions available.'
+            # return {'title': video_data.title, 'transcript': video_data.transcript} may want to change back to this implemntation and wrap the transcript in json.loads() becasue I don't want the data to get out of step it shouldn't but just in case
+            return {'title': video_title, 'transcript': transcript}
+    except Exception as e:
+        error = f'Error: An unexpected error occurred 2. {str(e)}'
         return {'error': error}
+
 
 @app.route('/')
 def home():
@@ -99,10 +92,24 @@ def home():
 @app.route('/get_transcript', methods=['POST'])
 def get_transcript():
     youtube_url = request.form['youtube-url']
-    video_id_index = youtube_url.find('v=') + 2
-    if video_id_index == -1:
+
+    # Follow redirects to get the final URL
+    try:
+        response = requests.get(youtube_url, allow_redirects=True)
+        final_url = response.url
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Error: Failed to fetch the URL. {str(e)}'})
+
+    # Check if the final URL is a valid YouTube URL
+    if "www.youtube.com/watch?v=" not in final_url and "youtu.be/" not in final_url:
         return jsonify({'error': 'Invalid URL or no video ID found.'})
-    video_id = youtube_url[video_id_index:]
+
+    # Extract the video ID
+    if "www.youtube.com/watch?v=" in final_url:
+        video_id = final_url.split("www.youtube.com/watch?v=")[-1]
+    elif "youtu.be/" in final_url:
+        video_id = final_url.split("youtu.be/")[-1]
+
     if '&' in video_id:
         video_id = video_id[:video_id.index('&')]
 
@@ -112,6 +119,7 @@ def get_transcript():
 
     # Concatenate the transcript text into a single string
     transcript_text = ''
+
     for item in video_data['transcript']:
         transcript_text += item['text'] + ' '
 
@@ -119,29 +127,36 @@ def get_transcript():
     response = {
         'title': video_data['title'],
         'transcript': transcript_text,
-        'video_url': youtube_url
+        'video_url': final_url
     }
     return jsonify(response)
 
 
 @app.route('/get_video_title/<video_id>')
 def get_video_title(video_id):
+    # Check if the video_id parameter is valid
+    if len(video_id) != 11 or not video_id.isalnum():
+        error = 'Error: Invalid video ID.'
+        return jsonify({'error': error})
+
     try:
         # Build the YouTube video URL
         video_url = f'https://www.youtube.com/watch?v={video_id}'
 
         # Use requests and BeautifulSoup to extract the video title
         response = requests.get(video_url)
+        response.raise_for_status()  # raise HTTPError if status is not 200
         soup = BeautifulSoup(response.content, 'html.parser')
         video_title = soup.find('title').text.strip().split(' - YouTube')[0]
 
         return jsonify({'title': video_title, 'video_url': video_url})
-    except:
-        error = 'Error: Invalid URL or no captions available.'
+    except requests.exceptions.RequestException as e:
+        error = f'Error: {e}'
+        return jsonify({'error': error})
+    except (AttributeError, IndexError):
+        error = 'Error: Unable to extract video title.'
         return jsonify({'error': error})
 
 
 if __name__ == "__main__":
-    # with app.app_context():
-        # import_data_from_json()
     app.run(debug=True)
