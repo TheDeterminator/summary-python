@@ -32,6 +32,23 @@ class VideoData(db.Model):
         self.title = title
         self.transcript = transcript
 
+class History(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    # video_id = db.Column(db.String(255), db.ForeignKey('video_data.video_id'), nullable=False)
+
+    def __init__(self, user_id, video_id):
+        self.user_id = user_id
+        self.video_id = video_id
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(255), nullable=False)
+
+    def __init__(self, username):
+        self.username = username
+
+
 
 def get_video_data(video_id):
     try:
@@ -88,11 +105,7 @@ def get_video_data(video_id):
 def home():
     return render_template('index.html')
 
-
-@app.route('/get_transcript', methods=['POST'])
-def get_transcript():
-    youtube_url = request.form['youtube-url']
-
+def extract_youtube_video_id(youtube_url):
     # Follow redirects to get the final URL
     try:
         response = requests.get(youtube_url, allow_redirects=True)
@@ -113,9 +126,27 @@ def get_transcript():
     if '&' in video_id:
         video_id = video_id[:video_id.index('&')]
 
+    return video_id, final_url
+
+
+@app.route('/get_transcript', methods=['POST'])
+def get_transcript():
+    youtube_url = request.form['youtube-url']
+    test_user_id = 1
+
+    video_id, final_url = extract_youtube_video_id(youtube_url)
+
     video_data = get_video_data(video_id)
     if 'error' in video_data:
         return jsonify(video_data)
+
+    # existing_history = History.query.filter_by(user_id=test_user_id, video_id=video_id).first()
+
+    # if not existing_history:
+    #         history = History(user_id=test_user_id, video_id=video_id)
+    #         db.session.add(history)
+    #         db.session.commit()
+
 
     # Concatenate the transcript text into a single string
     transcript_text = ''

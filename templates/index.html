@@ -20,6 +20,10 @@
         .hidden {
             display: none;
         }
+
+        .error {
+            color: red;
+        }
     </style>
 </head>
 
@@ -29,8 +33,8 @@
         <form id="transcript-form">
             <div class="form-group">
                 <label for="youtube-url">YouTube URL:</label>
-                <input type="text" class="form-control" id="youtube-url" name="youtube-url" placeholder="Enter a URL"
-                    required>
+                <input type="text" class="form-control" id="youtube-url" name="youtube-url" onClick="this.select();"
+                    placeholder="Enter a URL" required>
             </div>
             <button type="submit" class="btn btn-primary">
                 <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
@@ -38,13 +42,14 @@
             </button>
             <button type="button" class="btn btn-secondary" id="copy-transcript">Copy Transcript</button>
             <button type="button" class="btn btn-secondary" id="copy-title">Copy Title</button>
+            <button type="button" class="btn btn-success" id="generate-summary-prompt">Generate Summary Prompt</button>
             <div id="copy-status-message" class="hidden"></div>
 
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="pagination-toggle" value="pagination">
                 <label class="form-check-label" for="pagination-toggle">Enable Pagination</label>
             </div>
-            <select class="custom-select" id="pagination-splits">
+            <select class="custom-select hidden" id="pagination-splits">
                 <option value="2" selected>Halves</option>
                 <option value="4">Quarters</option>
                 <option value="8">Eighths</option>
@@ -61,15 +66,18 @@
         </div>
     </div>
     <script>
-        let transcript;
-        let videoTitle;
+        let transcript = '';
+        let videoTitle = '';
 
-        function copyToClipboard(value, postCopyMessage) {
+        function copyToClipboard(value, postCopyMessage, openNewWindow = false) {
             // Check for Clipboard API support
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(value)
                     .then(() => {
                         showMessage(postCopyMessage);
+                        if (openNewWindow) {
+                            window.open("https://chat.openai.com", "_blank");
+                        }
                     })
                     .catch((err) => {
                         showMessage("Copy to clipboard failed!");
@@ -87,13 +95,18 @@
             }
         }
 
-        function showMessage(text) {
+        function showMessage(text, isError, duration = 3000) {
             const message = document.getElementById('copy-status-message');
             message.innerText = text;
+            if (isError) {
+                message.classList.add('error')
+            } else {
+                message.classList.remove('error')
+            }
             message.classList.remove('hidden');
             setTimeout(() => {
                 message.classList.add('hidden');
-            }, 3000); // Hide the message after 3 seconds
+            }, duration); // Hide the message after 3 seconds
         }
 
 
@@ -109,6 +122,9 @@
             const transcriptElement = document.getElementById('transcript');
             const videoTitleElement = document.getElementById('video-title');
             const transcriptContainer = document.getElementById('transcript-container');
+            if (data.error) {
+                showMessage(data.error, 10000)
+            }
             transcriptElement.innerHTML = '';
             videoTitleElement.innerText = data.title ? `Transcript for ${data.title}` : '';
             videoTitle = data.title
@@ -134,22 +150,23 @@
             }
         });
 
-        // TODO: Update this to use copyToClipboard function you created above
+        // TODO: You can combine these into one func that runs at start up
         document.getElementById('copy-transcript').addEventListener('click', () => {
-            // const transcriptElement = document.getElementById('transcript');
-            // const range = document.createRange();
-            // range.selectNode(transcriptElement);
-            // window.getSelection().removeAllRanges();
-            // window.getSelection().addRange(range);
-            // document.execCommand('copy');
-            // window.getSelection().removeAllRanges();
-            // showMessage("Copied to clipboard!");
             copyToClipboard(transcriptSections[currentPage], "Copied to clipboard!")
 
         });
         document.getElementById('copy-title').addEventListener('click', () => {
             copyToClipboard(videoTitle, "Title Copied!")
 
+        })
+        document.getElementById('generate-summary-prompt').addEventListener('click', () => {
+            // let article = 'a'
+            let article = 'the'
+            let clickbaitDisclaimer = ' and if it is clickbait tell me.'
+            let addClickbaitDisclaimer = true
+            let prompt = `This is a transcript from ${article} youtube video entitled "${videoTitle}": \n\n ${transcriptSections[currentPage]} \n\n Summarize the transcript and explain the video title${addClickbaitDisclaimer ? clickbaitDisclaimer : '.'}`
+
+            copyToClipboard(prompt, "Prompt generated and coppied to clipboard", true)
         })
 
         function updateTranscriptDisplay(transcriptSections, currentPage) {
@@ -184,10 +201,12 @@
                 transcriptSections = splitTranscript(transcript, numSplits);
                 updateTranscriptDisplay(transcriptSections, currentPage);
                 paginationControls.classList.remove('hidden');
+                paginationSplits.classList.remove('hidden')
             } else {
                 currentPage = 0
                 updateTranscriptDisplay([transcript], currentPage);
                 paginationControls.classList.add('hidden');
+                paginationSplits.classList.add('hidden')
             }
         });
 
