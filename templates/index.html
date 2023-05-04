@@ -45,6 +45,8 @@
             <button type="button" class="btn btn-success" id="generate-summary-prompt">Generate Summary Prompt</button>
             <div id="copy-status-message" class="hidden"></div>
 
+            <div class="" id="user-history"></div>
+
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="pagination-toggle" value="pagination">
                 <label class="form-check-label" for="pagination-toggle">Enable Pagination</label>
@@ -66,8 +68,65 @@
         </div>
     </div>
     <script>
+    async function fetchJSON(url) {
+        const response = await fetch(url);
+        return response.json();
+    }
+
+    function createElementWithText(tagName, text) {
+        const element = document.createElement(tagName);
+        element.innerText = text;
+        return element;
+    }
+
+    function createListItemWithLink(url, text) {
+        const listItem = document.createElement('li');
+        listItem.innerHTML = `<a href="${url}" target="_blank">${text}</a>`;
+        return listItem;
+    }
+
+
+
         let transcript = '';
         let videoTitle = '';
+
+        async function fetchUserHistory() {
+        const historyItems = await fetchJSON('/user_history')
+
+        console.log(historyItems)
+
+        const userHistory = document.getElementById('user-history');
+historyItems.forEach(item => {
+    const listItem = document.createElement('li');
+    listItem.innerHTML = `<a href="${item.video_url}" target="_blank">${item.title}</a>`;
+    listItem.addEventListener('click', async (e) => {
+        e.preventDefault(); // Prevent the default link behavior
+        await fetchTranscriptByVideoId(item.video_id);
+    });
+    userHistory.appendChild(listItem);
+});
+    }
+
+    async function fetchTranscriptByVideoId(videoId) {
+    const data = fetchJSON(`/get_transcript_by_id?video_id=${videoId}`);
+
+    // Display the transcript and title just like in the original fetch request
+    const transcriptElement = document.getElementById('transcript');
+    const videoTitleElement = document.getElementById('video-title');
+    const transcriptContainer = document.getElementById('transcript-container');
+    transcriptElement.innerHTML = '';
+    videoTitleElement.innerHTML = data.title ? `Transcript for <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank">${data.title}</a>` : '';
+    videoTitle = data.title;
+    transcript = data.transcript;
+
+    const p = createElementWithText('p', transcript)
+    transcriptElement.appendChild(p);
+    transcriptContainer.classList.remove('hidden');
+}
+
+
+    // Call the fetchUserHistory function when the page is loaded
+    document.addEventListener('DOMContentLoaded', fetchUserHistory);
 
         function copyToClipboard(value, postCopyMessage, openNewWindow = false) {
             // Check for Clipboard API support
@@ -130,10 +189,9 @@
             videoTitle = data.title
             if (data.transcript.length) {
                 transcriptContainer.classList.remove('hidden');
-                const p = document.createElement('p')
                 transcript = data.transcript
                 transcriptSections = [transcript]
-                p.innerText = transcript
+                const p = createElementWithText('p', transcript)
                 transcriptElement.appendChild(p)
 
                 if (paginationToggle.checked) {
@@ -163,8 +221,8 @@
             // let article = 'a'
             let article = 'the'
             let clickbaitDisclaimer = ' and if it is clickbait tell me.'
-            let addClickbaitDisclaimer = true
-            let prompt = `This is a transcript from ${article} youtube video entitled "${videoTitle}": \n\n ${transcriptSections[currentPage]} \n\n Summarize the transcript and explain the video title${addClickbaitDisclaimer ? clickbaitDisclaimer : '.'}`
+            let addClickbaitDisclaimer = false
+            let prompt = `This is a transcript from ${article} youtube video entitled "${videoTitle}": \n\n ${transcriptSections[currentPage]} \n\n Summarize the transcript and analyze the video title${addClickbaitDisclaimer ? clickbaitDisclaimer : '.'}`
 
             copyToClipboard(prompt, "Prompt generated and coppied to clipboard", true)
         })
